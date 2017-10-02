@@ -124,14 +124,14 @@ echo "Updating package index files..."
 apt-get update
 
 echo "Installing Python libraries..."
-apt-get install -y --force-yes python-pip python-dev python-imaging python-smbus
+apt-get install -y python-pip python-dev python-imaging python-smbus python-serial
 pip install numpy pi3d svg.path adafruit-ads1x15
 # smbus and ads1x15 Python libs are installed regardless whether ADC
 # is enabled; simplifies the Python code a little (no "uncomment this")
 
 echo "Installing Adafruit code and data in /boot..."
 cd /tmp
-curl -LO https://github.com/adafruit/Pi_Eyes/archive/master.zip
+curl -LO https://github.com/chrisy/Pi_Eyes/archive/master.zip
 unzip master.zip
 # Moving between filesystems requires copy-and-delete:
 cp -r Pi_Eyes-master /boot/Pi_Eyes
@@ -153,6 +153,10 @@ echo "Configuring system..."
 
 # Disable overscan compensation (use full screen):
 raspi-config nonint do_overscan 1
+
+# SSH and other settings
+raspi-config nonint do_ssh 1
+raspi-config nonint do_serial 1
 
 # HDMI settings for Pi eyes
 reconfig /boot/config.txt "^.*hdmi_force_hotplug.*$" "hdmi_force_hotplug=1"
