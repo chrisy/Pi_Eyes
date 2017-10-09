@@ -4,16 +4,20 @@
 # an embarrassing number of globals in the frame() function and stuff.
 # Needed to get SOMETHING working, can focus on improvements next.
 
+# With added UART input hackery -chrisy
+
 import Adafruit_ADS1x15
 import math
 import pi3d
 import random
-import thread
+import threading
 import time
 import RPi.GPIO as GPIO
 from svg.path import Path, parse_path
 from xml.dom.minidom import parse
 from gfxutil import *
+import serial
+import io
 
 # INPUT CONFIG for eye motion ----------------------------------------------
 # ANALOG INPUTS REQUIRE SNAKE EYES BONNET
@@ -33,6 +37,95 @@ BLINK_PIN       = 23    # GPIO pin for blink button (BOTH eyes)
 WINK_R_PIN      = 24    # GPIO pin for RIGHT eye wink button
 AUTOBLINK       = True  # If True, eyes blink autonomously
 
+UART_PORT	= "/dev/ttyAMA0"
+UART_BAUD	= 115200
+
+# UART initialization ------------------------------------------------------
+
+class uartThread(threading.Thread):
+	sio = None
+	lock = None
+	targets = None
+	lux = None
+
+	def __init__(self, uart):
+		super(uartThread, self).__init__()
+		#self.sio = io.TextIOWrapper(io.BufferedReader(uart))
+		self.sio = uart
+		self.lock = threading.Lock()
+		self.targets = ()
+		self.lux = 0.0
+
+	def run(self):
+		latest = None
+		while True:
+			# read the uart
+			try:
+				line = self.sio.readline()
+			except:
+				if not time:
+					break
+				time.sleep(0.1)
+				continue
+
+			parts = line.split(':')
+			if parts[0] == 'lux':
+				# reset the latest
+				try:
+					lux = float(parts[1])
+				except:
+					continue
+				latest = {
+					'lux': lux,
+					'blobs': [],
+				}
+			elif parts[0] == 'blob' and latest:
+				blob = {}
+				for item in parts[1:]:
+					k, v = item.split('=')
+					try:
+						blob[k] = float(v)
+					except:
+						blob = None
+						break
+				if blob:
+					latest['blobs'].append(blob)
+			elif parts[0] == 'fps' and latest:
+				try:
+					latest['fps'] = float(parts[1])
+				except:
+					latest = None
+					continue
+				# it's complete, process the contents
+				self.process(latest)
+				latest = None
+
+	def process(self, latest):
+		# sort the blobs by size, largest first
+		t = []
+		if 'blobs' in latest:
+			blobs = sorted(latest['blobs'], key=lambda x:x['s'], reverse=True)
+			# store with coords converted into x,y tuples in our usable range
+			t = [((blob['x'] * 60.0 - 30.0), -(blob['y'] * 60.0 - 30.0)) for blob in blobs]
+
+		if len(t):
+			print "new x:%f y:%f\r" % (t[0][0], t[0][1])
+
+		with self.lock:
+			self.targets = tuple(t)
+			self.lux = latest['lux']
+
+
+if UART_PORT:
+	uart = serial.Serial(UART_PORT)
+	uart.baudrate = UART_BAUD
+
+	uart_thread = uartThread(uart)
+	uart_thread.daemon = True
+	uart_thread.start()
+else:
+	uart = None
+	uart_thread = None
 
 # GPIO initialization ------------------------------------------------------
 
@@ -59,21 +152,29 @@ else:
 # we intentionally use a slower data rate (rather than sleep()) to lessen
 # the impact of this thread.  data_rate of 250 w/4 ADC channels provides
 # at most 75 Hz update from the ADC, which is plenty for this task.
-def adcThread(adc, dest):
-	while True:
-		for i in range(len(dest)):
-			# ADC input range is +- 4.096V
-			# ADC output is -2048 to +2047
-			# Analog inputs will be 0 to ~3.3V,
-			# thus 0 to 1649-ish.  Read & clip:
-			n = adc.read_adc(i, gain=1, data_rate=250)
-			if   n <    0: n =    0
-			elif n > 1649: n = 1649
-			dest[i] = n / 1649.0 # Store as 0.0 to 1.0
+class adcThread(threading.Thread):
+	def __init__(self, adc, dest):
+		super(adcThread, self).__init__()
+		self.adc = adc
+		seld.dest = dest
+
+	def run(self):
+		while True:
+			for i in range(len(self.dest)):
+				# ADC input range is +- 4.096V
+				# ADC output is -2048 to +2047
+				# Analog inputs will be 0 to ~3.3V,
+				# thus 0 to 1649-ish.  Read & clip:
+				n = self.adc.read_adc(i, gain=1, data_rate=250)
+				if   n <    0: n =    0
+				elif n > 1649: n = 1649
+				self.dest[i] = n / 1649.0 # Store as 0.0 to 1.0
 
 # Start ADC sampling thread if needed:
 if adc:
-	thread.start_new_thread(adcThread, (adc, adcValue))
+	adc_thread = adcThread(adc, adcValue)
+	adc_thread.daemon = True
+	adc_thread.start()
 
 
 # Load SVG file, extract paths & convert to point lists --------------------
@@ -247,6 +348,7 @@ moveDuration = random.uniform(0.075, 0.175)
 holdDuration = random.uniform(0.1, 1.1)
 startTime    = 0.0
 isMoving     = False
+isTracking   = False
 
 frames        = 0
 beginningTime = time.time()
@@ -297,7 +399,7 @@ trackingPos = 0.3
 def frame(p):
 
 	global startX, startY, destX, destY, curX, curY
-	global moveDuration, holdDuration, startTime, isMoving
+	global moveDuration, holdDuration, startTime, isMoving, isTracking
 	global frames
 	global leftIris, rightIris
 	global pupilMinPts, pupilMaxPts, irisPts, irisZ
@@ -348,15 +450,29 @@ def frame(p):
 				startY       = destY
 				curX         = destX
 				curY         = destY
-				holdDuration = random.uniform(0.1, 1.1)
+				if isTracking:
+					#holdDuration = random.uniform(0.01, 0.09)
+					holdDuration = 0.2
+				else:
+					holdDuration = random.uniform(0.1, 1.1)
 				startTime    = now
 				isMoving     = False
 		else:
 			if dt >= holdDuration:
-				destX        = random.uniform(-30.0, 30.0)
-				n            = math.sqrt(900.0 - destX * destX)
-				destY        = random.uniform(-n, n)
-				moveDuration = random.uniform(0.075, 0.175)
+				isTracking = False
+				if uart_thread:
+					with uart_thread.lock:
+						if len(uart_thread.targets):
+							destX, destY = uart_thread.targets[0]
+							print "x:%f y:%f\r" % (destX, destY)
+							isTracking = True
+							moveDuration = 0.2
+				if not isTracking:
+					destX        = random.uniform(-30.0, 30.0)
+					n            = math.sqrt(900.0 - destX * destX)
+					destY        = random.uniform(-n, n)
+					moveDuration = random.uniform(0.075, 0.175)
+
 				startTime    = now
 				isMoving     = True
 

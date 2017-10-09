@@ -136,6 +136,7 @@ unzip master.zip
 # Moving between filesystems requires copy-and-delete:
 cp -r Pi_Eyes-master /boot/Pi_Eyes
 rm -rf master.zip Pi_Eyes-master
+
 if [ $INSTALL_HALT -ne 0 ]; then
 	echo "Installing gpio-halt in /usr/local/bin..."
 	curl -LO https://github.com/adafruit/Adafruit-GPIO-Halt/archive/master.zip
@@ -157,6 +158,8 @@ raspi-config nonint do_overscan 1
 # SSH and other settings
 raspi-config nonint do_ssh 1
 raspi-config nonint do_serial 1
+[ -f /boot/overlays/pi3-disable-bt.dtbo ] && reconfig /boot/config.txt '^.*dtoverlay=pi3-disable-bt.*$' 'dtoverlay=pi3-disable-bt'
+reconfig /boot/config.txt '^.*config_hdmi_boost=.*$' 'config_hdmi_boost=4'
 
 # HDMI settings for Pi eyes
 reconfig /boot/config.txt "^.*hdmi_force_hotplug.*$" "hdmi_force_hotplug=1"
