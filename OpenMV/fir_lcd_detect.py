@@ -2,15 +2,22 @@
 # transmitted over the UART pins (UART 3)
 #
 
-import sensor, image, time, fir, lcd
-from pyb import UART
+import sensor, image, time, fir, pyb
+#import lcd
 
 # Setup the UART
-uart = UART(3, 115200)
-uart.init(115200, flow=0, bits=8, parity=None, stop=1)
+uart_bus = 1
+uart_baud = 115200
+uart = pyb.UART(uart_bus, baudrate=uart_baud, flow=0, bits=8, parity=None, stop=1, timeout_char=10)
+
+def send(text):
+    global uart
+    print(text)
+    uart.write("%s\r\n" % text)
 
 # Send an initial message
-uart.write("status:starting\n")
+send("")
+send("status:starting")
 
 # Reset sensor
 sensor.reset()
@@ -33,32 +40,76 @@ if (sensor.get_id() == sensor.OV2640):
 fir.init()
 
 # Initialize the lcd sensor
-lcd.init()
+#lcd.init()
 
 # FPS clock
 clock = time.clock()
 
 # fir region of display
-fir_height = 20
-fir_yoffset = (sensor.height // 2) - (fir_height //2)
-fir_region = [0, fir_yoffset, sensor.width, fir_height ]
+fir_height = 34
+fir_yoffset = (sensor.height() // 2) - (fir_height // 2)
+fir_region = [0, fir_yoffset, sensor.width(), fir_height]
+fir_scale = [0, 35]
 
 # Our fir threshold range
-fir_threshold = [50, 50, 0, 0, 0, 0] # Middle L, A, B values.
+fir_threshold = [56, 73, 8, 69, -3, 76] # Middle L, A, B values.
+fir_threshold = [32, 95, -18, 40, -22, 92]
 # TODO need to tune this
 
+learn = False
+learn_count = 200
+learn_width = 50
+
+if learn:
+    # Capture the color thresholds for whatever was in the center of the image.
+    r = [(sensor.width()//2)-(learn_width//2), fir_yoffset, learn_width, fir_height]
+
+    print("Auto algorithms done. Hold the object you want to track in front of the camera in the box.")
+    print("MAKE SURE THE COLOR OF THE OBJECT YOU WANT TO TRACK IS FULLY ENCLOSED BY THE BOX!")
+    for i in range(60):
+        img = sensor.snapshot()
+        img.draw_rectangle(r)
+
+    print("Learning thresholds...")
+    threshold = [50, 50, 0, 0, 0, 0] # Middle L, A, B values.
+    for i in range(learn_count):
+        img = sensor.snapshot()
+
+        ta, ir, to_min, to_max = fir.read_ir()
+        fir.draw_ir(img, ir, alpha=256, scale=fir_scale)
+
+        hist = img.get_histogram(roi=r)
+        lo = hist.get_percentile(0.01) # Get the CDF of the histogram at the 1% range (ADJUST AS NECESSARY)!
+        hi = hist.get_percentile(0.99) # Get the CDF of the histogram at the 99% range (ADJUST AS NECESSARY)!
+        # Average in percentile values.
+        threshold[0] = (threshold[0] + lo.l_value()) // 2
+        threshold[1] = (threshold[1] + hi.l_value()) // 2
+        threshold[2] = (threshold[2] + lo.a_value()) // 2
+        threshold[3] = (threshold[3] + hi.a_value()) // 2
+        threshold[4] = (threshold[4] + lo.b_value()) // 2
+        threshold[5] = (threshold[5] + hi.b_value()) // 2
+        for blob in img.find_blobs([threshold], pixels_threshold=100, area_threshold=100, merge=True, margin=16):
+            img.draw_rectangle(blob.rect())
+            img.draw_cross(blob.cx(), blob.cy())
+            img.draw_rectangle(r)
+
+    send("Learnt: %s" % repr(threshold))
+    while True:
+        time.sleep(1)
+
 # Tell the rpi we've started
-uart.write("status:started\n")
+send("status:started")
 
 while(True):
     clock.tick()
 
     # Capture an image
-    image = sensor.snapshot()
+    img = sensor.snapshot()
 
-    # TODO calc lux (for some definition) of image and send to pi
-    # intention is to link iris diameter to brightness
-    uart.write("lux:0.0\n")
+    # Calc luminosity (for some definition) of image and send to the Pi.
+    # Intention is to link iris diameter to brightness.
+    stats = img.get_statistics()
+    send("lux:%d" % stats.mean())
 
     # Capture FIR data
     #   ta: Ambient temperature
@@ -68,34 +119,35 @@ while(True):
     ta, ir, to_min, to_max = fir.read_ir()
 
     # Draw IR data on the framebuffer
-    fir.draw_ir(image, ir, alpha=256, scale=[0, 35]) # idea is that body temp saturates the scale
+    # "scale" is set such that body temperatures saturate the scale
+    fir.draw_ir(img, ir, alpha=256, scale=fir_scale)
 
     # draw bounds of fir image
-    image.draw_rectangle(fir_region)
+    img.draw_rectangle(fir_region)
 
-    uart.write("blobs:start\n")
+    send("blobs:start")
 
     # Do some detection on the FIR region of the image
-    for blobs in img.find_blobs([fir_threshold],
+    for blob in img.find_blobs([fir_threshold],
             pixels_threshold=4, area_threshold=4,
-            merge=True, margin=1,
+            merge=True, margin=16,
             roi=fir_region):
         # display where the blob is
         img.draw_rectangle(blob.rect())
 
         # tell rpi where the blob is
-        uart.write("x:%f y:%f\n" % (blob.cx() / sensor.width, (blob.cy() - fir_yoffset) / fir_height)
+        send("blob:x=%f:y=%f:s=%f" % (blob.cx() / sensor.width(), (blob.cy() - fir_yoffset) / fir_height, blob.area() ))
 
-    uart.write("blobs:end\n")
-
+    send("blobs:end")
 
     # Draw ambient, min and max temperatures.
-    image.draw_string(0, 0, "Ta: %0.2f"%ta, color = (0xFF, 0x00, 0x00))
-    image.draw_string(0, 8, "To min: %0.2f"%to_min, color = (0xFF, 0x00, 0x00))
-    image.draw_string(0, 16, "To max: %0.2f"%to_max, color = (0xFF, 0x00, 0x00))
+    #image.draw_string(0, 0, "Ta: %0.2f"%ta, color = (0xFF, 0x00, 0x00))
+    #image.draw_string(0, 8, "To min: %0.2f"%to_min, color = (0xFF, 0x00, 0x00))
+    #image.draw_string(0, 16, "To max: %0.2f"%to_max, color = (0xFF, 0x00, 0x00))
 
     # Display image on LCD
-    lcd.display(image)
+    #lcd.display(img)
 
     # Print FPS.
-    print(clock.fps())
+    send("fps:%f" % clock.fps())
+
