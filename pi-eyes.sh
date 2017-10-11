@@ -13,7 +13,7 @@ echo "Snake Eyes Bonnet for Raspberry Pi. Steps include:"
 echo "- Update package index files (apt-get update)"
 echo "- Install Python libraries: numpy, pi3d, svg.path,"
 echo "  python-dev, python-imaging"
-echo "- Install Adafruit eye code and data in /boot"
+echo "- Install Adafruit eye code and data in /home/pi"
 echo "- Enable SPI0 and SPI1 peripherals if needed"
 echo "- Set HDMI resolution to 640x480, disable overscan"
 echo "Run time ~25 minutes. Reboot required."
@@ -129,13 +129,16 @@ pip install numpy pi3d svg.path adafruit-ads1x15
 # smbus and ads1x15 Python libs are installed regardless whether ADC
 # is enabled; simplifies the Python code a little (no "uncomment this")
 
-echo "Installing Adafruit code and data in /boot..."
-cd /tmp
-curl -LO https://github.com/chrisy/Pi_Eyes/archive/master.zip
-unzip master.zip
-# Moving between filesystems requires copy-and-delete:
-cp -r Pi_Eyes-master /boot/Pi_Eyes
-rm -rf master.zip Pi_Eyes-master
+install_from_zip() {
+	echo "Installing Adafruit code and data in /home/pi..."
+	cd /tmp
+	curl -LO https://github.com/chrisy/Pi_Eyes/archive/master.zip
+	unzip master.zip
+	# Moving between filesystems requires copy-and-delete:
+	cp -r Pi_Eyes-master /home/pi/Pi_Eyes
+	rm -rf master.zip Pi_Eyes-master
+}
+[ ! -d .git ] && install_from_zip
 
 if [ $INSTALL_HALT -ne 0 ]; then
 	echo "Installing gpio-halt in /usr/local/bin..."
@@ -156,10 +159,13 @@ echo "Configuring system..."
 raspi-config nonint do_overscan 1
 
 # SSH and other settings
-raspi-config nonint do_ssh 1
-raspi-config nonint do_serial 1
+raspi-config nonint do_ssh 0
+raspi-config nonint do_serial 1  # not sure this does all we need it to
+reconfig /boot/config.txt '^.*enable_uart=1.*$' 'enable_uart 1'
+
 [ -f /boot/overlays/pi3-disable-bt.dtbo ] && reconfig /boot/config.txt '^.*dtoverlay=pi3-disable-bt.*$' 'dtoverlay=pi3-disable-bt'
 reconfig /boot/config.txt '^.*config_hdmi_boost=.*$' 'config_hdmi_boost=4'
+systemctl disable hciuart
 
 # HDMI settings for Pi eyes
 reconfig /boot/config.txt "^.*hdmi_force_hotplug.*$" "hdmi_force_hotplug=1"
@@ -201,20 +207,20 @@ if [ $SCREEN_SELECT -ne 3 ]; then
 	grep fbx2 /etc/rc.local >/dev/null
 	if [ $? -eq 0 ]; then
 		# fbx2 already in rc.local, but make sure correct:
-		sed -i "s/^.*fbx2.*$/\/boot\/Pi_Eyes\/fbx2 $SCREEN_OPT \&/g" /etc/rc.local >/dev/null
+		sed -i "s/^.*fbx2.*$/\/home\/pi\/Pi_Eyes\/fbx2 $SCREEN_OPT \&/g" /etc/rc.local >/dev/null
 	else
 		# Insert fbx2 into rc.local before final 'exit 0'
-	sed -i "s/^exit 0/\/boot\/Pi_Eyes\/fbx2 $SCREEN_OPT \&\\nexit 0/g" /etc/rc.local >/dev/null
+	sed -i "s/^exit 0/\/home\/pi\/Pi_Eyes\/fbx2 $SCREEN_OPT \&\\nexit 0/g" /etc/rc.local >/dev/null
 	fi
 
 	# Auto-start eyes.py on boot
 	grep eyes.py /etc/rc.local >/dev/null
 	if [ $? -eq 0 ]; then
 		# eyes.py already in rc.local, but make sure correct:
-		sed -i "s/^.*eyes.py.*$/cd \/boot\/Pi_Eyes;python eyes.py \&/g" /etc/rc.local >/dev/null
+		sed -i "s/^.*eyes.py.*$/cd \/home\/pi\/Pi_Eyes;python eyes.py \&/g" /etc/rc.local >/dev/null
 	else
 		# Insert eyes.py into rc.local before final 'exit 0'
-	sed -i "s/^exit 0/cd \/boot\/Pi_Eyes;python eyes.py \&\\nexit 0/g" /etc/rc.local >/dev/null
+	sed -i "s/^exit 0/cd \/home\/pi\/Pi_Eyes;python eyes.py \&\\nexit 0/g" /etc/rc.local >/dev/null
 	fi
 
 else
@@ -223,10 +229,10 @@ else
 	grep cyclops.py /etc/rc.local >/dev/null
 	if [ $? -eq 0 ]; then
 		# cyclops.py already in rc.local, but make sure correct:
-		sed -i "s/^.*cyclops.py.*$/cd \/boot\/Pi_Eyes;python cyclops.py \&/g" /etc/rc.local >/dev/null
+		sed -i "s/^.*cyclops.py.*$/cd \/home\/pi\/Pi_Eyes;python cyclops.py \&/g" /etc/rc.local >/dev/null
 	else
 		# Insert cyclops.py into rc.local before final 'exit 0'
-	sed -i "s/^exit 0/cd \/boot\/Pi_Eyes;python cyclops.py \&\\nexit 0/g" /etc/rc.local >/dev/null
+	sed -i "s/^exit 0/cd \/home\/pi\/Pi_Eyes;python cyclops.py \&\\nexit 0/g" /etc/rc.local >/dev/null
 	fi
 
 fi

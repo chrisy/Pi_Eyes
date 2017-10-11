@@ -68,6 +68,9 @@ class uartThread(threading.Thread):
 				time.sleep(0.1)
 				continue
 
+			if ':' not in line:
+				continue
+
 			parts = line.split(':')
 			if parts[0] == 'lux':
 				# reset the latest
@@ -82,13 +85,15 @@ class uartThread(threading.Thread):
 			elif parts[0] == 'blob' and latest:
 				blob = {}
 				for item in parts[1:]:
+					if '=' not in item:
+						continue
 					k, v = item.split('=')
 					try:
 						blob[k] = float(v)
 					except:
 						blob = None
 						break
-				if blob:
+				if len(blob):
 					latest['blobs'].append(blob)
 			elif parts[0] == 'fps' and latest:
 				try:
