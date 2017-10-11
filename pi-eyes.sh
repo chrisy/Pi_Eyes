@@ -161,7 +161,7 @@ raspi-config nonint do_overscan 1
 # SSH and other settings
 raspi-config nonint do_ssh 0
 raspi-config nonint do_serial 1  # not sure this does all we need it to
-reconfig /boot/config.txt '^.*enable_uart=1.*$' 'enable_uart 1'
+reconfig /boot/config.txt '^.*enable_uart=1.*$' 'enable_uart=1'
 
 [ -f /boot/overlays/pi3-disable-bt.dtbo ] && reconfig /boot/config.txt '^.*dtoverlay=pi3-disable-bt.*$' 'dtoverlay=pi3-disable-bt'
 reconfig /boot/config.txt '^.*config_hdmi_boost=.*$' 'config_hdmi_boost=4'
