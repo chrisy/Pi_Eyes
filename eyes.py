@@ -87,8 +87,8 @@ class uartThread(threading.Thread):
 				for item in parts[1:]:
 					if '=' not in item:
 						continue
-					k, v = item.split('=')
 					try:
+						k, v = item.split('=')
 						blob[k] = float(v)
 					except:
 						blob = None
