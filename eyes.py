@@ -93,7 +93,7 @@ class uartThread(threading.Thread):
 					except:
 						blob = None
 						break
-				if len(blob):
+				if blob and len(blob):
 					latest['blobs'].append(blob)
 			elif parts[0] == 'fps' and latest:
 				try:
@@ -109,9 +109,9 @@ class uartThread(threading.Thread):
 		# sort the blobs by size, largest first
 		t = []
 		if 'blobs' in latest:
-			blobs = sorted(latest['blobs'], key=lambda x:x['s'], reverse=True)
+			blobs = sorted(latest['blobs'], key=lambda x:x.get('s', 0), reverse=True)
 			# store with coords converted into x,y tuples in our usable range
-			t = [((blob['x'] * 60.0 - 30.0), -(blob['y'] * 60.0 - 30.0)) for blob in blobs]
+			t = [((blob['x'] * 60.0 - 30.0), -(blob['y'] * 60.0 - 30.0)) for blob in blobs if 'x' in blob and 'y' in blob]
 
 		if len(t):
 			print "new x:%f y:%f\r" % (t[0][0], t[0][1])
@@ -469,7 +469,7 @@ def frame(p):
 					with uart_thread.lock:
 						if len(uart_thread.targets):
 							destX, destY = uart_thread.targets[0]
-							print "x:%f y:%f\r" % (destX, destY)
+							#print "x:%f y:%f\r" % (destX, destY)
 							isTracking = True
 							moveDuration = 0.2
 				if not isTracking:
