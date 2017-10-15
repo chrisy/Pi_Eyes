@@ -56,10 +56,11 @@ class uartThread(threading.Thread):
 		self.lock = threading.Lock()
 		self.targets = ()
 		self.lux = 0.0
+		self.running = True
 
 	def run(self):
 		latest = None
-		while True:
+		while self.running:
 			# read the uart
 			try:
 				line = self.sio.readline()
@@ -115,7 +116,7 @@ class uartThread(threading.Thread):
 			t = [((blob['x'] * 60.0 - 30.0), -(blob['y'] * 60.0 - 30.0)) for blob in blobs if 'x' in blob and 'y' in blob]
 
 		if len(t):
-			print "new x:%f y:%f\r" % (t[0][0], t[0][1])
+		    print "new x:%f y:%f  fps:%f\r" % (t[0][0], t[0][1], latest['fps'] if 'fps' in latest else 0.0)
 
 		with self.lock:
 			self.targets = tuple(t)
@@ -164,9 +165,10 @@ class adcThread(threading.Thread):
 		super(adcThread, self).__init__()
 		self.adc = adc
 		self.dest = dest
+		self.running = True
 
 	def run(self):
-		while True:
+		while self.running:
 			for i in range(len(self.dest)):
 				# ADC input range is +- 4.096V
 				# ADC output is -2048 to +2047
@@ -230,11 +232,11 @@ light  = pi3d.Light(lightpos=(0, -500, -500), lightamb=(0.2, 0.2, 0.2))
 # Load texture maps --------------------------------------------------------
 
 irisMap   = pi3d.Texture("graphics/iris.jpg"  , mipmap=False,
-              filter=pi3d.GL_LINEAR)
+		filter=pi3d.GL_LINEAR)
 scleraMap = pi3d.Texture("graphics/sclera.png", mipmap=False,
-              filter=pi3d.GL_LINEAR, blend=True)
+		filter=pi3d.GL_LINEAR, blend=True)
 lidMap    = pi3d.Texture("graphics/lid.png"   , mipmap=False,
-              filter=pi3d.GL_LINEAR, blend=True)
+		filter=pi3d.GL_LINEAR, blend=True)
 # U/V map may be useful for debugging texture placement; not normally used
 #uvMap     = pi3d.Texture("graphics/uv.png"    , mipmap=False,
 #              filter=pi3d.GL_LINEAR, blend=False, m_repeat=True)
@@ -266,7 +268,7 @@ irisRegenThreshold = 0.0
 a = pointsBounds(pupilMinPts) # Bounds of pupil at min size (in pixels)
 b = pointsBounds(pupilMaxPts) # " at max size
 maxDist = max(abs(a[0] - b[0]), abs(a[1] - b[1]), # Determine distance of max
-              abs(a[2] - b[2]), abs(a[3] - b[3])) # variance around each edge
+	      abs(a[2] - b[2]), abs(a[3] - b[3])) # variance around each edge
 # maxDist is motion range in pixels as pupil scales between 0.0 and 1.0.
 # 1.0 / maxDist is one pixel's worth of scale range.  Need 1/4 that...
 if maxDist > 0: irisRegenThreshold = 0.25 / maxDist
@@ -435,10 +437,10 @@ def frame(p):
 #	if(now > beginningTime):
 #		print(frames/(now-beginningTime))
 
-        if STEER_PIN >= 0:
-            steer = (GPIO.input(STEER_PIN) == GPIO.LOW)
-        else:
-            steer = False
+	if STEER_PIN >= 0:
+		steer = (GPIO.input(STEER_PIN) == GPIO.LOW)
+	else:
+		steer = False
 
 	if steer and JOYSTICK_X_IN >= 0 and JOYSTICK_Y_IN >= 0:
 		# Eye position from analog inputs
@@ -697,6 +699,8 @@ def frame(p):
 
 	k = mykeys.read()
 	if k==27:
+		if uart_thread: uart_thread.running = False
+		if adc_thread: adc_thread.running = False
 		mykeys.close()
 		DISPLAY.stop()
 		exit(0)
