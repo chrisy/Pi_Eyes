@@ -5,6 +5,8 @@
 import sensor, image, time, fir, pyb
 #import lcd
 
+print(repr(pyb.freq()))
+
 # Setup the UART
 uart_bus = 1
 uart_baud = 115200
@@ -102,6 +104,7 @@ send("status:started")
 
 while(True):
     clock.tick()
+    time.sleep(50)
 
     # Capture an image
     img = sensor.snapshot()
@@ -150,4 +153,3 @@ while(True):
 
     # Print FPS.
     send("fps:%f" % clock.fps())
-
