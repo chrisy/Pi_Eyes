@@ -22,20 +22,21 @@ import io
 # INPUT CONFIG for eye motion ----------------------------------------------
 # ANALOG INPUTS REQUIRE SNAKE EYES BONNET
 
-JOYSTICK_X_IN   = -1    # Analog input for eye horiz pos (-1 = auto)
-JOYSTICK_Y_IN   = -1    # Analog input for eye vert position (")
+JOYSTICK_X_IN   = 0     # Analog input for eye horiz pos (-1 = auto)
+JOYSTICK_Y_IN   = 1     # Analog input for eye vert position (")
 PUPIL_IN        = -1    # Analog input for pupil control (-1 = auto)
-JOYSTICK_X_FLIP = False # If True, reverse stick X axis
+JOYSTICK_X_FLIP = True  # If True, reverse stick X axis
 JOYSTICK_Y_FLIP = False # If True, reverse stick Y axis
 PUPIL_IN_FLIP   = False # If True, reverse reading from PUPIL_IN
 TRACKING        = True  # If True, eyelid tracks pupil
 PUPIL_SMOOTH    = 16    # If > 0, filter input from PUPIL_IN
 PUPIL_MIN       = 0.0   # Lower analog range from PUPIL_IN
 PUPIL_MAX       = 1.0   # Upper "
-WINK_L_PIN      = 22    # GPIO pin for LEFT eye wink button
-BLINK_PIN       = 23    # GPIO pin for blink button (BOTH eyes)
-WINK_R_PIN      = 24    # GPIO pin for RIGHT eye wink button
+WINK_L_PIN      = 4     # GPIO pin for LEFT eye wink button
+BLINK_PIN       = 18    # GPIO pin for blink button (BOTH eyes)
+WINK_R_PIN      = 27    # GPIO pin for RIGHT eye wink button
 AUTOBLINK       = True  # If True, eyes blink autonomously
+STEER_PIN       = 17    # Hold down to steer with joystick
 
 UART_PORT	= "/dev/ttyAMA0"
 UART_BAUD	= 115200
@@ -138,6 +139,7 @@ GPIO.setmode(GPIO.BCM)
 if WINK_L_PIN >= 0: GPIO.setup(WINK_L_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 if BLINK_PIN  >= 0: GPIO.setup(BLINK_PIN , GPIO.IN, pull_up_down=GPIO.PUD_UP)
 if WINK_R_PIN >= 0: GPIO.setup(WINK_R_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+if STEER_PIN >= 0:  GPIO.setup(STEER_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 
 # ADC stuff ----------------------------------------------------------------
@@ -161,7 +163,7 @@ class adcThread(threading.Thread):
 	def __init__(self, adc, dest):
 		super(adcThread, self).__init__()
 		self.adc = adc
-		seld.dest = dest
+		self.dest = dest
 
 	def run(self):
 		while True:
@@ -433,7 +435,12 @@ def frame(p):
 #	if(now > beginningTime):
 #		print(frames/(now-beginningTime))
 
-	if JOYSTICK_X_IN >= 0 and JOYSTICK_Y_IN >= 0:
+        if STEER_PIN >= 0:
+            steer = (GPIO.input(STEER_PIN) == GPIO.LOW)
+        else:
+            steer = False
+
+	if steer and JOYSTICK_X_IN >= 0 and JOYSTICK_Y_IN >= 0:
 		# Eye position from analog inputs
 		curX = adcValue[JOYSTICK_X_IN]
 		curY = adcValue[JOYSTICK_Y_IN]
