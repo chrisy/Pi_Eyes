@@ -58,6 +58,11 @@ fir_threshold = [56, 73, 8, 69, -3, 76] # Middle L, A, B values.
 fir_threshold = [32, 95, -18, 40, -22, 92]
 # TODO need to tune this
 
+fps_target = 10
+fps_delay_max = 500
+fps_delay = 100
+fps_delay_inc = 1
+
 learn = False
 learn_count = 200
 learn_width = 50
@@ -104,7 +109,7 @@ send("status:started")
 
 while(True):
     clock.tick()
-    time.sleep(50)
+    time.sleep(fps_delay)
 
     # Capture an image
     img = sensor.snapshot()
@@ -152,4 +157,13 @@ while(True):
     #lcd.display(img)
 
     # Print FPS.
-    send("fps:%f" % clock.fps())
+    fps = clock.fps()
+    send("fps:%f" % fps)
+    if fps < fps_target:
+        fps_delay -= fps_delay_inc
+        if fps_delay < 0:
+            fps_delay = 0
+    elif fps > fps_target:
+        fps_delay += fps_delay_inc
+        if fps_delay > fps_delay_max:
+            fps_delay = fps_delay_max
