@@ -60,6 +60,8 @@ class uartThread(threading.Thread):
 
 	def run(self):
 		latest = None
+                # Purge any buffered bytes
+                self.sio.reset_input_buffer()
 		while self.running:
 			# read the uart
 			try:
@@ -108,18 +110,22 @@ class uartThread(threading.Thread):
 				latest = None
 
 	def process(self, latest):
-		# sort the blobs by size, largest first
-		t = []
-		if 'blobs' in latest:
-			blobs = sorted(latest['blobs'], key=lambda x:x.get('s', 0), reverse=True)
-			# store with coords converted into x,y tuples in our usable range
-			t = [((blob['x'] * 60.0 - 30.0), -(blob['y'] * 60.0 - 30.0)) for blob in blobs if 'x' in blob and 'y' in blob]
+		# sort the blobs by size, use the largest
+		t = ()
+		if 'blobs' in latest and len(latest['blobs']) > 0:
+			blob = sorted(latest['blobs'], key=lambda x:x.get('s', 0), reverse=True)[0]
+			# store with coords converted into x,y tuples scaled to our usable range
+			t = ( (blob['x'] * 60.0 - 30.0), -(blob['y'] * 60.0 - 30.0) )
 
 		if len(t):
-                    print "new x:%1.1f y:%1.1f lux:%1.1f fps:%1.1f\r" % (t[0][0], t[0][1], latest['lux'], latest['fps'] if 'fps' in latest else 0.0)
+                    print "new x:%1.1f y:%1.1f lux:%1.1f fps:%1.1f\r" % (
+                            t[0],
+                            t[1],
+                            latest['lux'] if 'lux' in latest else 0.0,
+                            latest['fps'] if 'fps' in latest else 0.0)
 
 		with self.lock:
-			self.targets = tuple(t)
+			self.targets = t
 			self.lux = latest['lux']
 
 
@@ -477,7 +483,7 @@ def frame(p):
 				if uart_thread:
 					with uart_thread.lock:
 						if len(uart_thread.targets):
-							destX, destY = uart_thread.targets[0]
+							destX, destY = uart_thread.targets
 							#print "x:%f y:%f\r" % (destX, destY)
 							isTracking = True
 							moveDuration = 0.2
