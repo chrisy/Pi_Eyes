@@ -2,8 +2,9 @@
 # transmitted over the UART pins (UART 3)
 #
 
+debug = True
+
 import sensor, image, time, fir, pyb
-#import lcd
 
 print(repr(pyb.freq()))
 
@@ -41,9 +42,6 @@ if (sensor.get_id() == sensor.OV2640):
 # Initialize the thermal sensor
 fir.init()
 
-# Initialize the lcd sensor
-#lcd.init()
-
 # FPS clock
 clock = time.clock()
 
@@ -62,6 +60,8 @@ fps_target = 10
 fps_delay_max = 500
 fps_delay = 100
 fps_delay_inc = 1
+
+dbg_row = 0
 
 learn = False
 learn_count = 200
@@ -104,6 +104,14 @@ if learn:
     while True:
         time.sleep(1)
 
+def dbg(img, txt):
+    global dbg_row
+
+    img.draw_string(1, dbg_row+1, txt, color = (0x00, 0x00, 0x00))
+    img.draw_string(0, dbg_row, txt, color = (0xff, 0xff, 0xff))
+
+    dbg_row += 8
+
 # Tell the rpi we've started
 send("status:started")
 
@@ -111,13 +119,19 @@ while(True):
     clock.tick()
     time.sleep(fps_delay)
 
+    # reset text line
+    dbg_row = 0
+
     # Capture an image
     img = sensor.snapshot()
 
     # Calc luminosity (for some definition) of image and send to the Pi.
     # Intention is to link iris diameter to brightness.
     stats = img.get_statistics()
-    send("lux:%d" % stats.mean())
+    lux = stats.uq() + stats.median()
+    if lux > 100:
+        lux = 100
+    send("lux:%d" % lux)
 
     # Capture FIR data
     #   ta: Ambient temperature
@@ -133,9 +147,8 @@ while(True):
     # draw bounds of fir image
     img.draw_rectangle(fir_region)
 
-    send("blobs:start")
-
     # Do some detection on the FIR region of the image
+    blob_count = 0
     for blob in img.find_blobs([fir_threshold],
             pixels_threshold=4, area_threshold=4,
             merge=True, margin=16,
@@ -144,21 +157,18 @@ while(True):
         img.draw_rectangle(blob.rect())
 
         # tell rpi where the blob is
-        send("blob:x=%f:y=%f:s=%f" % (blob.cx() / sensor.width(), (blob.cy() - fir_yoffset) / fir_height, blob.area() ))
-
-    send("blobs:end")
-
-    # Draw ambient, min and max temperatures.
-    #image.draw_string(0, 0, "Ta: %0.2f"%ta, color = (0xFF, 0x00, 0x00))
-    #image.draw_string(0, 8, "To min: %0.2f"%to_min, color = (0xFF, 0x00, 0x00))
-    #image.draw_string(0, 16, "To max: %0.2f"%to_max, color = (0xFF, 0x00, 0x00))
-
-    # Display image on LCD
-    #lcd.display(img)
+        send("blob:x=%1.2f:y=%1.2f:s=%1.1f" % (
+            blob.cx() / sensor.width(),
+            (blob.cy() - fir_yoffset) / fir_height,
+            blob.area()/50
+        ))
+        blob_count += 1
 
     # Print FPS.
     fps = clock.fps()
-    send("fps:%f" % fps)
+    send("fps:%1.1f" % fps)
+
+    # Adjust FPS towards target
     if fps < fps_target:
         fps_delay -= fps_delay_inc
         if fps_delay < 0:
@@ -167,3 +177,8 @@ while(True):
         fps_delay += fps_delay_inc
         if fps_delay > fps_delay_max:
             fps_delay = fps_delay_max
+
+    if debug:
+        dbg(img, "fps: %1.1f" % fps)
+        dbg(img, "lux: %1.1f" % lux)
+        dbg(img, "blobs: %d" % blob_count)
