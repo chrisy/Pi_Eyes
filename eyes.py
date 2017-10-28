@@ -24,14 +24,14 @@ import io
 
 JOYSTICK_X_IN   = 0     # Analog input for eye horiz pos (-1 = auto)
 JOYSTICK_Y_IN   = 1     # Analog input for eye vert position (")
-PUPIL_IN        = -1    # Analog input for pupil control (-1 = auto)
+PUPIL_IN        = -2    # Analog input for pupil control (-1 = auto)
 JOYSTICK_X_FLIP = True  # If True, reverse stick X axis
 JOYSTICK_Y_FLIP = False # If True, reverse stick Y axis
-PUPIL_IN_FLIP   = False # If True, reverse reading from PUPIL_IN
+PUPIL_IN_FLIP   = True  # If True, reverse reading from PUPIL_IN
 TRACKING        = True  # If True, eyelid tracks pupil
 PUPIL_SMOOTH    = 16    # If > 0, filter input from PUPIL_IN
 PUPIL_MIN       = 0.0   # Lower analog range from PUPIL_IN
-PUPIL_MAX       = 1.0   # Upper "
+PUPIL_MAX       = 100.  # Upper "
 WINK_L_PIN      = 4     # GPIO pin for LEFT eye wink button
 BLINK_PIN       = 18    # GPIO pin for blink button (BOTH eyes)
 WINK_R_PIN      = 27    # GPIO pin for RIGHT eye wink button
@@ -116,7 +116,7 @@ class uartThread(threading.Thread):
 			t = [((blob['x'] * 60.0 - 30.0), -(blob['y'] * 60.0 - 30.0)) for blob in blobs if 'x' in blob and 'y' in blob]
 
 		if len(t):
-		    print "new x:%f y:%f  fps:%f\r" % (t[0][0], t[0][1], latest['fps'] if 'fps' in latest else 0.0)
+                    print "new x:%1.1f y:%1.1f lux:%1.1f fps:%1.1f\r" % (t[0][0], t[0][1], latest['lux'], latest['fps'] if 'fps' in latest else 0.0)
 
 		with self.lock:
 			self.targets = tuple(t)
@@ -736,17 +736,33 @@ while True:
 
 	if PUPIL_IN >= 0: # Pupil scale from sensor
 		v = adcValue[PUPIL_IN]
-		if PUPIL_IN_FLIP: v = 1.0 - v
 		# If you need to calibrate PUPIL_MIN and MAX,
 		# add a 'print v' here for testing.
 		if   v < PUPIL_MIN: v = PUPIL_MIN
 		elif v > PUPIL_MAX: v = PUPIL_MAX
 		# Scale to 0.0 to 1.0:
 		v = (v - PUPIL_MIN) / (PUPIL_MAX - PUPIL_MIN)
+		if PUPIL_IN_FLIP: v = 1.0 - v
 		if PUPIL_SMOOTH > 0:
 			v = ((currentPupilScale * (PUPIL_SMOOTH - 1) + v) /
 			     PUPIL_SMOOTH)
 		frame(v)
+        elif PUPIL_IN == -2 and uart_thread: # read from uart
+            with uart_thread.lock:
+                v = uart_thread.lux
+
+            #print("v: %f\r" % v)
+            if   v < PUPIL_MIN: v = PUPIL_MIN
+            elif v > PUPIL_MAX: v = PUPIL_MAX
+            # Scale to 0.0 to 1.0:
+            v = (v - PUPIL_MIN) / (PUPIL_MAX - PUPIL_MIN)
+            if PUPIL_IN_FLIP: v = 1.0 - v
+            # add noise
+            v += (random.random() / 5) - 0.1
+            if PUPIL_SMOOTH > 0:
+                v = ((currentPupilScale * (PUPIL_SMOOTH - 1) + v) /
+                         PUPIL_SMOOTH)
+            frame(v)
 	else: # Fractal auto pupil scale
 		v = random.random()
 		split(currentPupilScale, v, 4.0, 1.0)
