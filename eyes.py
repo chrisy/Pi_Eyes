@@ -56,6 +56,12 @@ graphics = {
         "sclera": "graphics/dragon-sclera.png",
         "lid": "graphics/lid.png",
     },
+    "cat": {
+        "dom": "graphics/cat-eye.svg",
+        "iris": "graphics/cat-iris.jpg",
+        "sclera": "graphics/cat-sclera.png",
+        "lid": "graphics/lid.png",
+    },
 }
 
 # choose the graphic set
