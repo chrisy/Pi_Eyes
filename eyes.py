@@ -41,6 +41,26 @@ STEER_PIN       = 17    # Hold down to steer with joystick
 UART_PORT	= "/dev/ttyAMA0"
 UART_BAUD	= 115200
 
+# Set of graphics we know about
+
+graphics = {
+    "eye": {
+        "dom": "graphics/eye.svg",
+        "iris": "graphics/iris.jpg",
+        "sclera": "graphics/sclera.png",
+        "lid": "graphics/lid.png",
+    },
+    "dragon": {
+        "dom": "graphics/dragon-eye.svg",
+        "iris": "graphics/dragon-iris.jpg",
+        "sclera": "graphics/dragon-sclera.png",
+        "lid": "graphics/lid.png",
+    },
+}
+
+# choose the graphic set
+eyegfx = "eye"
+
 # UART initialization ------------------------------------------------------
 
 class uartThread(threading.Thread):
@@ -136,8 +156,9 @@ if UART_PORT:
 	uart_thread = uartThread(uart)
 	uart_thread.daemon = True
 	uart_thread.start()
+
+	del uart
 else:
-	uart = None
 	uart_thread = None
 
 # GPIO initialization ------------------------------------------------------
@@ -194,7 +215,7 @@ if adc:
 
 # Load SVG file, extract paths & convert to point lists --------------------
 
-dom               = parse("graphics/eye.svg")
+dom               = parse(graphics[eyegfx]["dom"])
 vb                = getViewBox(dom)
 pupilMinPts       = getPoints(dom, "pupilMin"      , 32, True , True )
 pupilMaxPts       = getPoints(dom, "pupilMax"      , 32, True , True )
@@ -237,11 +258,11 @@ light  = pi3d.Light(lightpos=(0, -500, -500), lightamb=(0.2, 0.2, 0.2))
 
 # Load texture maps --------------------------------------------------------
 
-irisMap   = pi3d.Texture("graphics/iris.jpg"  , mipmap=False,
+irisMap   = pi3d.Texture(graphics[eyegfx]["iris"], mipmap=False,
 		filter=pi3d.GL_LINEAR)
-scleraMap = pi3d.Texture("graphics/sclera.png", mipmap=False,
+scleraMap = pi3d.Texture(graphics[eyegfx]["sclera"], mipmap=False,
 		filter=pi3d.GL_LINEAR, blend=True)
-lidMap    = pi3d.Texture("graphics/lid.png"   , mipmap=False,
+lidMap    = pi3d.Texture(graphics[eyegfx]["lid"], mipmap=False,
 		filter=pi3d.GL_LINEAR, blend=True)
 # U/V map may be useful for debugging texture placement; not normally used
 #uvMap     = pi3d.Texture("graphics/uv.png"    , mipmap=False,
