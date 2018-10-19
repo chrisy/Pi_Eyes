@@ -124,7 +124,7 @@ echo "Updating package index files..."
 apt-get update
 
 echo "Installing Python libraries..."
-apt-get install -y python-pip python-dev python-imaging python-smbus python-serial
+apt-get install -y python-pip python-dev python-imaging python-smbus python-serial scipy
 pip install numpy pi3d svg.path adafruit-ads1x15
 # smbus and ads1x15 Python libs are installed regardless whether ADC
 # is enabled; simplifies the Python code a little (no "uncomment this")
@@ -136,7 +136,9 @@ install_from_zip() {
 	unzip master.zip
 	# Moving between filesystems requires copy-and-delete:
 	cp -r Pi_Eyes-master /home/pi/Pi_Eyes
+	chown -R pi /home/pi/Pi_Eyes
 	rm -rf master.zip Pi_Eyes-master
+	cd /home/pi/Pi_Eyes
 }
 [ ! -d .git ] && install_from_zip
 
@@ -150,6 +152,10 @@ if [ $INSTALL_HALT -ne 0 ]; then
 	cd ..
 	rm -rf Adafruit-GPIO-Halt-master
 fi
+
+# Compile fbx2
+rm -f fbx2
+make
 
 # CONFIG -------------------------------------------------------------------
 
