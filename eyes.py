@@ -18,6 +18,7 @@ from xml.dom.minidom import parse
 from gfxutil import *
 import serial
 import io
+from scipy.signal import lfilter
 
 # INPUT CONFIG for eye motion ----------------------------------------------
 # ANALOG INPUTS REQUIRE SNAKE EYES BONNET
@@ -40,6 +41,8 @@ STEER_PIN       = 17    # Hold down to steer with joystick
 
 UART_PORT    = "/dev/ttyAMA0"
 UART_BAUD    = 115200
+
+POINTS_COUNT = 8
 
 # Set of graphics we know about
 
@@ -74,6 +77,8 @@ class uartThread(threading.Thread):
     lock = None
     targets = None
     lux = None
+    points_x = None
+    points_y = None
 
     def __init__(self, uart):
         super(uartThread, self).__init__()
@@ -82,6 +87,17 @@ class uartThread(threading.Thread):
         self.lock = threading.Lock()
         self.targets = ()
         self.lux = 0.0
+        self.points_x = [0] * POINTS_COUNT
+        self.points_y = [0] * POINTS_COUNT
+
+        n = 15
+        self.b_x = [1.0 / n] * n
+        self.a_x = 1
+
+        n = 5
+        self.b_y = [1.0 / n] * n
+        self.a_y = 1
+
         self.running = True
 
     def run(self):
@@ -145,12 +161,25 @@ class uartThread(threading.Thread):
             # store with coords converted into x,y tuples scaled to our usable range
             t = ( (blob['x'] * 60.0 - 30.0), -(blob['y'] * 60.0 - 30.0) )
 
-        if len(t):
-                    print "new x:%1.1f y:%1.1f lux:%1.1f fps:%1.1f\r" % (
-                            t[0],
-                            t[1],
-                            latest['lux'] if 'lux' in latest else 0.0,
-                            latest['fps'] if 'fps' in latest else 0.0)
+        if t:
+            print "new x:%1.1f y:%1.1f lux:%1.1f fps:%1.1f\r" % (
+                   t[0],
+                   t[1],
+                   latest['lux'] if 'lux' in latest else 0.0,
+                   latest['fps'] if 'fps' in latest else 0.0)
+
+        if t:
+            # accumulate points in a rolling buffer
+            self.points_x.pop(0)
+            self.points_y.pop(0)
+            self.points_x.append(t[0])
+            self.points_y.append(t[1])
+
+            # run a filter on the accumulated points
+            x = lfilter(self.b_x, self.a_x, self.points_x)
+            y = lfilter(self.b_y, self.a_y, self.points_y)
+
+            t = (x[-1], y[-1])
 
         with self.lock:
             self.targets = t
